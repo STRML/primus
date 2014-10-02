@@ -4,7 +4,9 @@
   "description": "Primus is a simple abstraction around real-time frameworks. It allows you to easily switch between different frameworks without any code changes.",
   "main": "index.js",
   "scripts": {
+    "compile": "browserify primus.js -o dist/primus.js --standalone Primus",
     "integration": "NODE_ENV=testing mocha $(find test -name '*.integration.js')",
+    "pre-publish": "npm run compile",
     "test": "NODE_ENV=testing mocha $(find test -name '*.test.js')",
     "update": "find transformers -name update.sh -exec bash {} \\;"
   },
@@ -54,11 +56,14 @@
     "forwarded-for": "0.1.x",
     "fusing": "0.3.x",
     "load": "1.0.x",
-    "setheader": "0.0.x"
+    "recovery": "0.0.x",
+    "setheader": "0.0.x",
+    "tick-tock": "0.0.x"
   },
   "devDependencies": {
     "binary-pack": "0.0.x",
     "browserchannel": "2.0.x",
+    "browserify": "5.12.x",
     "chai": "1.9.x",
     "derequire": "1.2.x",
     "ejson": "1.0.x",

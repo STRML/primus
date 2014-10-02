@@ -6,6 +6,7 @@ var PrimusError = require('./errors').PrimusError
   , log = require('diagnostics')('primus')
   , Spark = require('./spark')
   , fuse = require('fusing')
+  , path = require('path')
   , fs = require('fs');
 
 //
@@ -157,7 +158,7 @@ fuse(Primus, EventEmitter);
 Object.defineProperty(Primus.prototype, 'client', {
   get: function read() {
     if (!read.primus) {
-      read.primus = fs.readFileSync(__dirname + '/primus.js', 'utf-8');
+      read.primus = fs.readFileSync(path.join(__dirname, 'dist', 'primus.js'), 'utf-8');
     }
 
     return this.customGlobal(read.primus);
@@ -171,7 +172,7 @@ Object.defineProperty(Primus.prototype, 'Socket', {
   get: function () {
     return require('load').compiler(this.library(true), 'primus.js', {
       __filename: 'primus.js',
-      __dirname: process.cwd()
+      __dirname: path.join(process.cwd(), 'dist')
     }).Primus;
   }
 });
