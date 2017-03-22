@@ -27,7 +27,7 @@ module.exports = function server() {
   // argument is useless here.
   //
   const group = native.server.group.create(
-    options.compression || options.transport.perMessageDeflate ? 1 : 0
+    (options.compression || options.transport.perMessageDeflate) ? uws.PERMESSAGE_DEFLATE : 0
   );
 
   let upgradeReq = null;
