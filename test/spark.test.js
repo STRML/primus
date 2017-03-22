@@ -321,6 +321,8 @@ describe('Spark', function () {
         spark.alive = true;
       });
 
+      expect(spark.__lastMessageSent).to.equal(0);
+
       // Run a few simulations. Using native promises here to avoid nesting
       delay(11)
       .then(function() {
@@ -330,11 +332,10 @@ describe('Spark', function () {
       })
       .then(function() {
         expect(pings).to.equal(1);
-        var oldTimeout = spark.heartbeatTimer;
-        // Writing this message should reset the timer
+        // Writing this message will set a new _lastMessageSent
         spark.write('hi!');
-        // Timeout will have changed, but still verify functionality
-        expect(oldTimeout).not.to.equal(spark.heartbeatTimer);
+        // Verify this changed and acct for drift
+        expect(spark.__lastMessageSent).to.be.closeTo(Date.now(), 5);
         return delay(6);
       })
       .then(function() {

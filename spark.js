@@ -48,6 +48,7 @@ function Spark(primus, headers, address, query, id, request) {
   writable('ultron', new Ultron(this)); // Our event listening cleanup.
   writable('alive', true);              // Flag used to detect zombie sparks.
   writable('heartbeatTimer', null);     // Timer used to send heartbeats to client.
+  writable('__lastMessageSent', 0);     // Used for tracking when to heartbeat.
 
   //
   // Parse our query string.
@@ -103,20 +104,31 @@ Spark.get('address', function address() {
   return this.request.forwarded || forwarded(this.remote, this.headers, this.primus.whitelist);
 });
 
-//
-// Reset the heartbeat timer. We send a heartbeat if we have been
-// idle for `pingInterval` ms.
-//
-Spark.readable('resetHeartbeatTimer', function resetHeartbeatTimer() {
+/**
+ * Reset the heartbeat timer. We send a heartbeat if we have been
+ * idle for `pingInterval` ms.
+ *
+ * @param {Number} delay An optional heartbeat delay to override pingInterval.
+ * @returns {Spark}
+ * @api private
+ */
+Spark.readable('resetHeartbeatTimer', function resetHeartbeatTimer(delay) {
   const spark = this;
 
   clearTimeout(spark.heartbeatTimer);
+  const pingInterval = delay || spark.primus.options.pingInterval;
 
-  if (!spark.primus.options.pingInterval) return;
+  if (!pingInterval) return;
+  //
+  // Prevent some GC churn by saving this bound function.
+  //
+  if (!spark.__sendHeartbeat) {
+    spark.__sendHeartbeat = spark.sendHeartbeat.bind(spark);
+  }
 
   log('setting new heartbeat timeout for %s', spark.id);
 
-  spark.heartbeatTimer = setTimeout(spark.sendHeartbeat.bind(spark), spark.primus.options.pingInterval);
+  spark.heartbeatTimer = setTimeout(spark.__sendHeartbeat, pingInterval);
 
   return this;
 });
@@ -126,6 +138,19 @@ Spark.readable('resetHeartbeatTimer', function resetHeartbeatTimer() {
 //
 Spark.readable('sendHeartbeat', function sendHeartbeat() {
   const spark = this;
+  //
+  // Check if we can skip this heartbeat (message sent recently)
+  //
+  const pingInterval = spark.primus.options.pingInterval;
+  const timeSinceLastPing = Date.now() - spark.__lastMessageSent;
+  if (timeSinceLastPing < (pingInterval * 0.95)) {
+    //
+    // We sent a ping recently, so schedule one to be sent 'pingInterval' ms
+    // since the last one.
+    //
+    spark.resetHeartbeatTimer(pingInterval - timeSinceLastPing);
+    return this;
+  }
 
   if (!spark.alive) {
     //
@@ -431,9 +456,10 @@ Spark.readable('write', function write(data) {
   this.transforms(primus, this, 'outgoing', data);
 
   //
-  // After sending a message, we can reset the heartbeat timer.
+  // After sending a message, mark when we sent it so we can delay
+  // the next heartbeat we send.
   //
-  this.resetHeartbeatTimer();
+  this.__lastMessageSent = Date.now();
 
   return true;
 });
