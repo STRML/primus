@@ -47,7 +47,6 @@ function Primus(server, options) {
   this.connections = Object.create(null);     // Connection storage.
   this.ark = Object.create(null);             // Plugin storage.
   this.layers = [];                           // Middleware layers.
-  this.heartbeatInterval = null;              // The heartbeat interval.
   this.transformer = null;                    // Reference to the real-time engine instance.
   this.encoder = null;                        // Shorthand to the parser's encoder.
   this.decoder = null;                        // Shorthand to the parser's decoder.
@@ -330,16 +329,6 @@ Primus.readable('initialise', function initialise(Transformer, options) {
   this.use('authorization', require('./middleware/authorization'));
 
   //
-  // Set the heartbeat interval.
-  //
-  if (options.pingInterval) {
-    this.heartbeatInterval = setInterval(
-      this.heartbeat.bind(this),
-      options.pingInterval
-    );
-  }
-
-  //
   // Emit the initialised event after the next tick so we have some time to
   // attach listeners.
   //
@@ -426,32 +415,6 @@ Primus.readable('forEach', function forEach(fn, done) {
       iterate();
     });
   }());
-
-  return this;
-});
-
-/**
- * Send a ping packet to all clients to ensure that they are still connected.
- *
- * @returns {Primus}
- * @api private
- */
-Primus.readable('heartbeat', function heartbeat() {
-  this.forEach(function forEach(spark) {
-    if (!spark.alive) {
-      //
-      // Set the `reconnect` option to `true` so we don't send a
-      // `primus::server::close` packet to an already broken connection.
-      //
-      spark.end(undefined, { reconnect: true });
-    } else {
-      const now = Date.now();
-
-      spark.alive = false;
-      spark.emit('outgoing::ping', now);
-      spark._write(`primus::ping::${now}`);
-    }
-  });
 
   return this;
 });
@@ -947,8 +910,6 @@ Primus.readable('destroy', function destroy(options, fn) {
   if (options.reconnect) options.close = true;
 
   var primus = this;
-
-  clearInterval(primus.heartbeatInterval);
 
   setTimeout(function close() {
     var transformer = primus.transformer;

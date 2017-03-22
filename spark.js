@@ -47,6 +47,7 @@ function Spark(primus, headers, address, query, id, request) {
   writable('query', query);             // The query string.
   writable('ultron', new Ultron(this)); // Our event listening cleanup.
   writable('alive', true);              // Flag used to detect zombie sparks.
+  writable('heartbeatTimer', null);     // Timer used to send heartbeats to client.
 
   //
   // Parse our query string.
@@ -54,6 +55,11 @@ function Spark(primus, headers, address, query, id, request) {
   if ('string' === typeof this.query) {
     this.query = parse(this.query);
   }
+
+  //
+  // Set the heartbeat timer (may be disabled, reset on write)
+  //
+  this.resetHeartbeatTimer();
 
   this.__initialise.forEach(function execute(initialise) {
     initialise.call(spark);
@@ -95,6 +101,48 @@ Spark.writable('__readyState', Spark.OPEN);
 //
 Spark.get('address', function address() {
   return this.request.forwarded || forwarded(this.remote, this.headers, this.primus.whitelist);
+});
+
+//
+// Reset the heartbeat timer. We send a heartbeat if we have been
+// idle for `pingInterval` ms.
+//
+Spark.readable('resetHeartbeatTimer', function resetHeartbeatTimer() {
+  const spark = this;
+
+  clearTimeout(spark.heartbeatTimer);
+
+  if (!spark.primus.options.pingInterval) return;
+
+  log('setting new heartbeat timeout for %s', spark.id);
+
+  spark.heartbeatTimer = setTimeout(spark.sendHeartbeat.bind(spark), spark.primus.options.pingInterval);
+
+  return this;
+});
+
+//
+// Send the heartbeat.
+//
+Spark.readable('sendHeartbeat', function sendHeartbeat() {
+  const spark = this;
+
+  if (!spark.alive) {
+    //
+    // Set the `reconnect` option to `true` so we don't send a
+    // `primus::server::close` packet to an already broken connection.
+    //
+    spark.end(undefined, { reconnect: true });
+  } else {
+    const now = Date.now();
+
+    spark.alive = false;
+    spark.emit('outgoing::ping', now);
+    spark._write(`primus::ping::${now}`);
+    spark.resetHeartbeatTimer();
+  }
+
+  return this;
 });
 
 /**
@@ -174,6 +222,8 @@ Spark.readable('__initialise', [function initialise() {
         return new ParserError('Failed to decode incoming data: '+ err.message, spark, err);
       }
 
+      spark.alive = true;
+
       //
       // Handle "primus::" prefixed protocol messages.
       //
@@ -188,7 +238,6 @@ Spark.readable('__initialise', [function initialise() {
   // `pimus::pong::<timestamp>` message.
   //
   ultron.on('incoming::pong', function pong() {
-    spark.alive = true;
     spark.emit('heartbeat');
   });
 
@@ -223,7 +272,7 @@ Spark.readable('__initialise', [function initialise() {
   // End is triggered by both incoming and outgoing events.
   //
   ultron.on('end', function end() {
-    clearTimeout(spark.timeout);
+    clearTimeout(spark.heartbeatTimer);
     primus.emit('disconnection', spark);
   });
 
@@ -380,6 +429,11 @@ Spark.readable('write', function write(data) {
   }
 
   this.transforms(primus, this, 'outgoing', data);
+
+  //
+  // After sending a message, we can reset the heartbeat timer.
+  //
+  this.resetHeartbeatTimer();
 
   return true;
 });

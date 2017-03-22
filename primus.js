@@ -468,6 +468,12 @@ Primus.prototype.initialise = function initialise(options) {
   });
 
   primus.on('incoming::data', function message(raw) {
+    //
+    // Upon receiving data, reset the expected heartbeat timeout.
+    //
+    primus.online = true;
+    primus.heartbeat();
+
     primus.decoder(raw, function decoding(err, data) {
       //
       // Do a "safe" emit('error') when we fail to parse a message. We don't

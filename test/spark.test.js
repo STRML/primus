@@ -287,7 +287,7 @@ describe('Spark', function () {
     });
 
     it('emits `outgoing::ping` when sending a ping', function (done) {
-      var primus = new Primus(server, { pingInterval: 25 })
+      var primus = new Primus(server, { pingInterval: 10 })
         , spark = new primus.Spark();
 
       spark.on('outgoing::ping', function () {
@@ -298,7 +298,7 @@ describe('Spark', function () {
     });
 
     it('writes `primus::ping::<timestamp>` when sending a ping', function (done) {
-      var primus = new Primus(server, { pingInterval: 25 })
+      var primus = new Primus(server, { pingInterval: 10 })
         , spark = new primus.Spark();
 
       spark.on('outgoing::ping', function (time) {
@@ -310,5 +310,66 @@ describe('Spark', function () {
         });
       });
     });
+
+    it('resets ping timer after sending any message', function (done) {
+      var primus = new Primus(server, { pingInterval: 10 })
+        , spark = new primus.Spark();
+
+      var pings = 0;
+      spark.on('outgoing::ping', function () {
+        pings++;
+        spark.alive = true;
+      });
+
+      // Run a few simulations. Using native promises here to avoid nesting
+      delay(11)
+      .then(function() {
+        expect(pings).to.equal(1);
+        // Wait part of the way to the next ping
+        return delay(5);
+      })
+      .then(function() {
+        expect(pings).to.equal(1);
+        var oldTimeout = spark.heartbeatTimer;
+        // Writing this message should reset the timer
+        spark.write('hi!');
+        // Timeout will have changed, but still verify functionality
+        expect(oldTimeout).not.to.equal(spark.heartbeatTimer);
+        return delay(6);
+      })
+      .then(function() {
+        // Ping would have fired by now without the write
+        expect(pings).to.equal(1);
+        return delay(6);
+      })
+      .then(function() {
+        expect(pings).to.equal(2);
+        expect(spark.alive).to.equal(true);
+        expect(spark.readyState).to.equal(Spark.OPEN);
+        primus.destroy(done);
+      })
+      .catch(done);
+    });
+
+    it('destroys ping timer after destroying the spark', function (done) {
+      var primus = new Primus(server, { pingInterval: 10 })
+        , spark = new primus.Spark();
+
+      var pings = 0;
+      spark.on('outgoing::ping', function () {
+        pings++;
+      });
+      spark.end();
+      setTimeout(function() {
+        expect(pings).to.equal(0);
+        primus.destroy(done);
+      }, 16);
+    });
   });
 });
+
+function delay(ms) {
+  return new Promise(function(resolve, reject) {
+    setTimeout(resolve, ms);
+  });
+}
